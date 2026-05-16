@@ -117,7 +117,7 @@ async fn status(
     Json(body).into_response()
 }
 
-async fn spawn(
+/*async fn spawn(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     Json(req): Json<SpawnRequest>,
@@ -157,6 +157,64 @@ async fn spawn(
     transition_state(&state, HostStatus::Running, Some(container_id.clone()), Some(req.ds_id)).await;
 
     Json(SpawnResponse { container_id }).into_response()
+}*/
+
+async fn spawn(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(req): Json<SpawnRequest>,
+) -> Response {
+    info!(ds_id = %req.ds_id, "--- SPAWN REQUEST RECEIVED ---");
+
+    // 1. Detailed Auth Check
+    let auth_header = headers.get("authorization").and_then(|v| v.to_str().ok());
+    if !check_auth(&headers, &state.config.agent_token) {
+        warn!(
+            provided_header = ?auth_header,
+            expected_token = %state.config.agent_token,
+            "Spawn rejected: Unauthorized"
+        );
+        return unauthorized();
+    }
+    info!("Auth successful for spawn request");
+
+    // 2. Status Check
+    {
+        let local = state.local.lock().await;
+        info!(current_status = ?local.status, "Checking host availability");
+        if local.status != HostStatus::Idle {
+            warn!(status = ?local.status, "Spawn rejected: Host is not idle");
+            return (
+                StatusCode::CONFLICT,
+                Json(AgentError { error: format!("not idle (currently {:?})", local.status) }),
+            ).into_response();
+        }
+    }
+
+    info!(ds_id = %req.ds_id, "Transitioning to 'Starting' state");
+    transition_state(&state, HostStatus::Starting, None, Some(req.ds_id.clone())).await;
+
+    // 3. Docker Execution with Logs
+    info!("Attempting Docker run...");
+    let container_id = match docker_run(&state.config, &req).await {
+        Ok(id) => {
+            info!(container_id = %id, "Docker container started successfully");
+            id
+        },
+        Err(e) => {
+            warn!(error = %e, "CRITICAL: Docker run failed");
+            transition_state(&state, HostStatus::Idle, None, None).await;
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(AgentError { error: format!("docker run failed: {e}") }),
+            ).into_response();
+        }
+    };
+
+    info!(ds_id = %req.ds_id, "Spawn complete. Transitioning to 'Running'");
+    transition_state(&state, HostStatus::Running, Some(container_id.clone()), Some(req.ds_id)).await;
+
+    Json(SpawnResponse { container_id }).into_response()
 }
 
 async fn kill(
@@ -192,7 +250,7 @@ async fn kill(
 // ─────────────────────────────────────────────────────────────────────────
 // Docker shellouts
 // ─────────────────────────────────────────────────────────────────────────
-
+/*
 async fn docker_run(config: &Config, req: &SpawnRequest) -> Result<String> {
     let port_map = format!("{p}:{p}/udp", p = req.ds_port);
     let label_role = "mmorpg.role=ds".to_string();
@@ -241,6 +299,57 @@ async fn docker_run(config: &Config, req: &SpawnRequest) -> Result<String> {
     }
 
     Ok(String::from_utf8(output.stdout)?.trim().to_string())
+}
+*/
+async fn docker_run(config: &Config, req: &SpawnRequest) -> Result<String> {
+    let port_map = format!("{p}:{p}/udp", p = req.ds_port);
+    let image = env::var("DS_DOCKER_IMAGE")
+        .unwrap_or_else(|_| "mmorpg/dedicated_server:latest".into());
+
+    info!(
+        image = %image,
+        port = %port_map,
+        ds_id = %req.ds_id,
+        "Constructing Docker command"
+    );
+
+    let mut cmd = tokio::process::Command::new("docker");
+    cmd.args([
+        "run", "-d", "--rm",
+        "--network", "host",
+        "-p", &port_map,
+        "--label", "mmorpg.role=ds",
+        "--label", &format!("mmorpg.ds_id={}", req.ds_id),
+        "-e", &format!("DS_ID={}", req.ds_id),
+        "-e", &format!("DS_PORT={}", req.ds_port),
+        "-e", &format!("DS_ZONE={}", req.ds_zone),
+        "-e", &format!("DS_MAX_PLAYERS={}", req.ds_max_players),
+        "-e", &format!("DS_ADVERTISE_HOST={}", req.ds_advertise_host),
+        "-e", &format!("ORCH_HOST={}", req.orch_host),
+        "-e", &format!("ORCH_PORT={}", req.orch_port),
+        "-e", &format!("REDIS_URL={}", req.redis_url),
+        &image,
+    ]);
+
+    info!("Executing: {:?}", cmd); // This prints the whole command string
+
+    let output = cmd.output().await?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        warn!(
+            exit_code = ?output.status.code(),
+            stderr = %stderr.trim(),
+            stdout = %stdout.trim(),
+            "Docker process exited with error"
+        );
+        anyhow::bail!("docker run failed: {}", stderr.trim());
+    }
+
+    let cid = String::from_utf8(output.stdout)?.trim().to_string();
+    info!(container_id = %cid, "Docker reported success");
+    Ok(cid)
 }
 
 async fn docker_stop(container_id: &str) -> Result<()> {
