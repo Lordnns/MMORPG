@@ -1,0 +1,21 @@
+[Unit]
+Description=MMORPG Monolith (all-in-one docker compose stack)
+Documentation=https://github.com/Lordnns/MMORPG
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/default/mmorpg-monolith
+WorkingDirectory=/etc/mmorpg/monolith
+ExecStartPre=-/usr/bin/docker compose -f /etc/mmorpg/monolith/docker-compose.yaml down --remove-orphans
+ExecStart=/usr/bin/docker compose -f /etc/mmorpg/monolith/docker-compose.yaml up
+ExecStop=/usr/bin/docker compose -f /etc/mmorpg/monolith/docker-compose.yaml down
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=300
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

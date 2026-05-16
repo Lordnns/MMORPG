@@ -1041,6 +1041,11 @@ coverage*[.json, .xml, .info]
 *.wat
 *.xhtml
 
+# --- Custom Overrides ---
+# Allow Debian packaging lib folders (Overrides Python/venv lib ignores)
+!debian/**/lib/
+!debian/**/lib/**/*
+
 ### VisualStudio ###
 
 # User-specific files

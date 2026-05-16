@@ -1,0 +1,21 @@
+[Unit]
+Description=MMORPG Central Control Plane (fleet mode)
+Documentation=https://github.com/Lordnns/MMORPG
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/default/mmorpg-central-fleet
+WorkingDirectory=/etc/mmorpg/central-fleet
+ExecStartPre=-/usr/bin/docker compose -f /etc/mmorpg/central-fleet/docker-compose.yaml down --remove-orphans
+ExecStart=/usr/bin/docker compose -f /etc/mmorpg/central-fleet/docker-compose.yaml up
+ExecStop=/usr/bin/docker compose -f /etc/mmorpg/central-fleet/docker-compose.yaml down
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=300
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

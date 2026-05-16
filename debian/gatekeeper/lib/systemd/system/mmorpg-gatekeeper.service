@@ -1,0 +1,21 @@
+[Unit]
+Description=MMORPG Gatekeeper (dedicated VM)
+Documentation=https://github.com/Lordnns/MMORPG
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/default/mmorpg-gatekeeper
+WorkingDirectory=/etc/mmorpg/gatekeeper
+ExecStartPre=-/usr/bin/docker compose -f /etc/mmorpg/gatekeeper/docker-compose.yaml down --remove-orphans
+ExecStart=/usr/bin/docker compose -f /etc/mmorpg/gatekeeper/docker-compose.yaml up
+ExecStop=/usr/bin/docker compose -f /etc/mmorpg/gatekeeper/docker-compose.yaml down
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=120
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,21 @@
+[Unit]
+Description=MMORPG Host Agent (DS container spawner)
+Documentation=https://github.com/Lordnns/MMORPG
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/default/mmorpg-host-agent
+ExecStart=/usr/local/bin/host_agent
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Light hardening — agent needs Docker socket and journald.
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

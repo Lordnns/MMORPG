@@ -1,0 +1,21 @@
+[Unit]
+Description=MMORPG Orchestrator (dedicated VM, remote-docker spawner)
+Documentation=https://github.com/Lordnns/MMORPG
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/default/mmorpg-orchestrator
+WorkingDirectory=/etc/mmorpg/orchestrator
+ExecStartPre=-/usr/bin/docker compose -f /etc/mmorpg/orchestrator/docker-compose.yaml down --remove-orphans
+ExecStart=/usr/bin/docker compose -f /etc/mmorpg/orchestrator/docker-compose.yaml up
+ExecStop=/usr/bin/docker compose -f /etc/mmorpg/orchestrator/docker-compose.yaml down
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=120
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
