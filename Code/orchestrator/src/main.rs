@@ -681,6 +681,34 @@ async fn write_heartbeat(
 // Scaler — capacity-based spawn + stateless eviction
 // ─────────────────────────────────────────────────────────────────────────
 
+
+#[derive(Debug)]
+struct HostSnapshot {
+    name: String,
+    status: String,
+    ds_id: Option<String>,
+}
+
+async fn read_hosts(conn: &mut ConnectionManager) -> Result<Vec<HostSnapshot>> {
+    let mut iter = conn.scan_match::<_, String>("host:*").await?;
+    let mut keys = Vec::new();
+    while let Some(k) = iter.next_item().await { keys.push(k); }
+    drop(iter);
+
+    let mut out = Vec::with_capacity(keys.len());
+    for key in keys {
+        let fields: HashMap<String, String> = conn.hgetall(&key).await?;
+        let Some(name) = key.strip_prefix("host:").map(String::from) else { continue; };
+        out.push(HostSnapshot {
+            name,
+            status: fields.get("status").cloned().unwrap_or_default(),
+            ds_id: fields.get("ds_id").cloned().filter(|s| !s.is_empty()),
+        });
+    }
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(out)
+}
+
 #[derive(Debug)]
 struct ServerSnapshot {
     id: String,
@@ -766,12 +794,27 @@ async fn run_scaler(
         };
 
         let free = total_free_capacity(&servers);
-        info!(
+        /*info!(
             free_slots = free,
             target = config.hot_capacity_min,
             buffer = config.evict_buffer,
             "fleet capacity"
+        );*/
+
+        let hosts = {
+            let mut conn = redis.lock().await;
+            read_hosts(&mut conn).await.unwrap_or_default()
+        };
+
+        let mut report = format!(
+            "\nfleet capacity: free={} target={} buffer={}\n  hosts ({}):\n",
+            free, config.hot_capacity_min, config.evict_buffer, hosts.len(),
         );
+        for h in &hosts {
+            let ds = h.ds_id.as_deref().unwrap_or("-");
+            report.push_str(&format!("    {:<18} {:<10} ds={}\n", h.name, h.status, ds));
+        }
+        info!("{}", report.trim_end());
 
         // 1. Scale up if below floor.
         if free < config.hot_capacity_min {
