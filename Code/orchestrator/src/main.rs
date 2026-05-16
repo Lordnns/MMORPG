@@ -298,31 +298,38 @@ struct RemoteDockerSpawner {
     http: reqwest::Client,
 }
 
+enum FleetPick {
+    Idle(String),
+    AllBusy,        // hosts exist but none idle right now (Stopping, Running, etc.)
+    NoHosts,        // fleet is empty — genuine capacity problem
+}
+
 impl RemoteDockerSpawner {
     fn agent_url(&self, host: &str, path: &str) -> String {
         format!("http://{host}:{port}{path}", host = host, port = self.agent_port)
     }
 
     /// Pick an idle host from Redis. Returns None if none available.
-    async fn pick_idle_host(&self) -> Result<Option<String>> {
+    async fn pick_idle_host(&self) -> Result<FleetPick> {
         let mut conn = self.redis.lock().await;
         let mut iter = conn.scan_match::<_, String>("host:*").await?;
-        let mut hosts = Vec::new();
-        while let Some(k) = iter.next_item().await {
-            hosts.push(k);
-        }
+        let mut keys = Vec::new();
+        while let Some(k) = iter.next_item().await { keys.push(k); }
         drop(iter);
 
-        for key in hosts {
+        if keys.is_empty() {
+            return Ok(FleetPick::NoHosts);
+        }
+
+        for key in keys {
             let fields: HashMap<String, String> = conn.hgetall(&key).await?;
-            let status = fields.get("status").map(String::as_str);
-            if status == Some("idle") {
+            if fields.get("status").map(String::as_str) == Some("idle") {
                 if let Some(name) = key.strip_prefix("host:") {
-                    return Ok(Some(name.to_string()));
+                    return Ok(FleetPick::Idle(name.to_string()));
                 }
             }
         }
-        Ok(None)
+        Ok(FleetPick::AllBusy)
     }
 
     /// Get every known agent hostname from Redis (regardless of status).
@@ -342,14 +349,23 @@ impl RemoteDockerSpawner {
 #[async_trait]
 impl Spawner for RemoteDockerSpawner {
     async fn spawn(&self, ds_id: &str, port: u16, env: &SpawnEnv) -> Result<Location> {
-        let Some(host) = self.pick_idle_host().await? else {
-            anyhow::bail!("no idle host available in fleet");
+        let host = match self.pick_idle_host().await? {
+            FleetPick::Idle(h) => h,
+            FleetPick::AllBusy => {
+                info!("no idle host right now — fleet busy, will retry next tick");
+                anyhow::bail!("fleet busy");
+            }
+            FleetPick::NoHosts => {
+                warn!("no hosts in fleet — fleet exhausted");
+                anyhow::bail!("fleet exhausted");
+            }
         };
 
         let req = SpawnRequest {
             ds_id: ds_id.to_string(),
             ds_port: port,
-            ds_advertise_host: env.ds_advertise_host.clone(),
+            ds_advertise_host: if env.ds_advertise_host.is_empty()
+                { host.clone() } else { env.ds_advertise_host.clone() },
             ds_zone: env.ds_zone.clone(),
             ds_max_players: env.ds_max_players,
             orch_host: env.orch_host.clone(),
@@ -807,7 +823,15 @@ async fn run_scaler(
                             warn!(error = %e, "pre-register write failed");
                         }
                     }
-                    Err(e) => { warn!(error = %e, "spawn failed"); break; }
+                    Err(e) => {
+                        let msg = e.to_string();
+                        if msg.contains("fleet busy") {
+                            info!("spawn deferred: {msg}");
+                        } else {
+                            warn!(error = %e, "spawn failed");
+                        }
+                        break;
+                    }
                 }
             }
         }
