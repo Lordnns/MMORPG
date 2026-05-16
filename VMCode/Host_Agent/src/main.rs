@@ -34,17 +34,24 @@ struct Config {
 
 impl Config {
     fn from_env() -> Self {
-        let host = env::var("AGENT_HOSTNAME").unwrap_or_else(|_| {
-            hostname::get()
-                .map(|h| h.to_string_lossy().to_string())
-                .unwrap_or_else(|_| "unknown".into())
-        });
+        let redis_url = env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6379".into());
+
+        // The orchestrator addresses this agent by IP (DS_HOSTS) and writes
+        // `host:<IP>` in Redis on its bootstrap probe. The agent must use the
+        // same key when it heartbeats — otherwise the two writes diverge and
+        // the orchestrator's idle-host picker keeps hitting a stale entry.
+        // Default to the local IP reachable from Redis (matches DS_HOSTS in
+        // typical LAN setups). AGENT_HOSTNAME still wins if explicitly set.
+        let host = env::var("AGENT_HOSTNAME").ok()
+            .or_else(|| detect_local_ip(&redis_url))
+            .or_else(|| hostname::get().ok().map(|h| h.to_string_lossy().to_string()))
+            .unwrap_or_else(|| "unknown".to_string());
 
         Self {
             listen_ip: env::var("AGENT_LISTEN_IP").unwrap_or_else(|_| "0.0.0.0".into()),
             port: env::var("AGENT_PORT").unwrap_or_else(|_| "8090".into()).parse().unwrap(),
             hostname: host,
-            redis_url: env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6379".into()),
+            redis_url,
             agent_token: env::var("AGENT_TOKEN").unwrap_or_else(|_| "change-me".into()),
             heartbeat_interval_secs: env::var("HEARTBEAT_INTERVAL").unwrap_or_else(|_| "30".into()).parse().unwrap(),
             heartbeat_ttl_secs: env::var("HEARTBEAT_TTL").unwrap_or_else(|_| "60".into()).parse().unwrap(),
@@ -52,6 +59,21 @@ impl Config {
             ds_image_label: env::var("DS_IMAGE_LABEL").unwrap_or_else(|_| "mmorpg.role=ds".into()),
         }
     }
+}
+
+/// Discover the local IP the OS would use to reach Redis. Uses the UDP-connect
+/// trick: connecting a UDP socket triggers route selection without sending any
+/// packets, and the resulting local_addr is the IP a peer would see us from.
+fn detect_local_ip(redis_url: &str) -> Option<String> {
+    let stripped = redis_url
+        .trim_start_matches("redis://")
+        .trim_start_matches("rediss://");
+    let after_auth = stripped.split_once('@').map(|(_, b)| b).unwrap_or(stripped);
+    let host_only = after_auth.split('/').next()?.split(':').next()?;
+
+    let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect((host_only, 80)).ok()?;
+    Some(socket.local_addr().ok()?.ip().to_string())
 }
 
 // ─────────────────────────────────────────────────────────────────────────
