@@ -1,0 +1,16 @@
+Package: mmorpg-central-fleet
+Version: __VERSION__
+Section: net
+Priority: optional
+Architecture: all
+Depends: docker.io | docker-ce, docker-compose-plugin | docker-compose
+Maintainer: Samuel <lordnns@example.com>
+Homepage: https://github.com/Lordnns/MMORPG
+Description: MMORPG lab — central control plane (fleet mode)
+ Installs redis + orchestrator + gatekeeper on a single control-plane VM.
+ Orchestrator runs in remote-docker mode, dispatching DS spawns to fleet-ds
+ hosts via their host_agent HTTP API.
+ .
+ Configure /etc/default/mmorpg-central-fleet (DS_HOSTS, AGENT_TOKEN,
+ ORCH_ADVERTISE_HOST), then:
+   systemctl start mmorpg-central-fleet

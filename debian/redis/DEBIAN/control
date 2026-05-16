@@ -1,0 +1,13 @@
+Package: mmorpg-redis
+Version: __VERSION__
+Section: net
+Priority: optional
+Architecture: all
+Depends: docker.io | docker-ce, docker-compose-plugin | docker-compose
+Maintainer: Samuel <lordnns@example.com>
+Homepage: https://github.com/Lordnns/MMORPG
+Description: MMORPG lab — dedicated Redis VM
+ Runs Redis 7 in Docker on a dedicated VM. Exposes port 6379 on all
+ interfaces so orchestrator/gatekeeper VMs can connect.
+ .
+   systemctl start mmorpg-redis

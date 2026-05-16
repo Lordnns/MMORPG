@@ -1,0 +1,49 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: mmorpg-redis
+    networks: [mmorpg]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 1s
+      retries: 5
+    restart: unless-stopped
+
+  orchestrator:
+    image: __REGISTRY__/__NAMESPACE__/mmorpg-orchestrator:__VERSION__
+    container_name: mmorpg-orchestrator
+    # host networking: orchestrator needs to listen on a host port for DS
+    # heartbeats coming from remote fleet-ds VMs.
+    network_mode: host
+    depends_on:
+      redis: { condition: service_healthy }
+    env_file:
+      - /etc/default/mmorpg-central-fleet
+    environment:
+      SPAWNER: "remote-docker"
+      DS_DOCKER_IMAGE: "__REGISTRY__/__NAMESPACE__/mmorpg-dedicated-server:__VERSION__"
+    restart: unless-stopped
+
+  gatekeeper:
+    image: __REGISTRY__/__NAMESPACE__/mmorpg-gatekeeper:__VERSION__
+    container_name: mmorpg-gatekeeper
+    networks: [mmorpg]
+    depends_on:
+      redis: { condition: service_healthy }
+    env_file:
+      - /etc/default/mmorpg-central-fleet
+    environment:
+      GK_LISTEN_IP: "0.0.0.0"
+      GK_PORT: "3000"
+      REDIS_URL: "redis://redis:6379"
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+networks:
+  mmorpg:
+    name: mmorpg
+    driver: bridge

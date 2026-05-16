@@ -1,0 +1,17 @@
+Package: mmorpg-fleet-ds
+Version: __VERSION__
+Section: net
+Priority: optional
+Architecture: amd64
+Depends: docker.io | docker-ce, ca-certificates
+Maintainer: Samuel <lordnns@example.com>
+Homepage: https://github.com/Lordnns/MMORPG
+Description: MMORPG lab — fleet DS host
+ Installs the host_agent as a systemd service. The agent manages
+ dedicated-server Docker containers on this host on demand from a
+ remote orchestrator.
+ .
+ On install, pulls the DS image from GHCR.
+ .
+ Configure /etc/default/mmorpg-host-agent, then:
+   systemctl start mmorpg-host-agent

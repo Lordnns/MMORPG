@@ -1,0 +1,216 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAMESPACE: lordnns
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────
+  # Resolve version from tag
+  # ─────────────────────────────────────────────────────────────────────
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      semver: ${{ steps.v.outputs.semver }}
+    steps:
+      - id: v
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          SEMVER="${TAG#v}"
+          echo "version=$TAG" >> "$GITHUB_OUTPUT"
+          echo "semver=$SEMVER" >> "$GITHUB_OUTPUT"
+          echo "Building release $TAG (semver $SEMVER)"
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Build & push Docker images
+  # ─────────────────────────────────────────────────────────────────────
+  images:
+    needs: version
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component:
+          - { name: orchestrator,      dockerfile: docker/orchestrator.Dockerfile }
+          - { name: gatekeeper,        dockerfile: docker/gatekeeper.Dockerfile }
+          - { name: dedicated-server,  dockerfile: docker/dedicated_server.Dockerfile }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ${{ matrix.component.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.component.dockerfile }}
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/mmorpg-${{ matrix.component.name }}:${{ needs.version.outputs.semver }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/mmorpg-${{ matrix.component.name }}:latest
+          cache-from: type=gha,scope=${{ matrix.component.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component.name }}
+          provenance: false
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Build host_agent native binary (used by fleet-ds .deb)
+  # ─────────────────────────────────────────────────────────────────────
+  host-agent-binary:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.90"
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            VMCode/Host_Agent/target
+          key: ${{ runner.os }}-host-agent-${{ hashFiles('VMCode/Host_Agent/Cargo.lock', 'Code/shared/**') }}
+          restore-keys: |
+            ${{ runner.os }}-host-agent-
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev
+
+      - name: Build host_agent (release)
+        working-directory: VMCode/Host_Agent
+        run: cargo build --release --target x86_64-unknown-linux-gnu
+
+      - name: Upload host_agent binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: host_agent
+          path: VMCode/Host_Agent/target/x86_64-unknown-linux-gnu/release/host_agent
+          if-no-files-found: error
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Build .deb packages
+  # ─────────────────────────────────────────────────────────────────────
+  debs:
+    needs: [version, host-agent-binary, images]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download host_agent binary
+        uses: actions/download-artifact@v4
+        with:
+          name: host_agent
+          path: /tmp/host_agent_bin
+
+      - name: Install packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev fakeroot
+
+      - name: Build all .debs
+        env:
+          VERSION: ${{ needs.version.outputs.semver }}
+          IMAGE_NAMESPACE: ${{ env.IMAGE_NAMESPACE }}
+          HOST_AGENT_BIN: /tmp/host_agent_bin/host_agent
+        run: |
+          chmod +x debian/build-debs.sh
+          ./debian/build-debs.sh
+
+      - name: List built packages
+        run: ls -lh dist/
+
+      - name: Upload .debs
+        uses: actions/upload-artifact@v4
+        with:
+          name: debs
+          path: dist/*.deb
+          if-no-files-found: error
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Create GitHub release
+  # ─────────────────────────────────────────────────────────────────────
+  release:
+    needs: [version, debs, images]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download .debs
+        uses: actions/download-artifact@v4
+        with:
+          name: debs
+          path: dist
+
+      - name: Generate release notes
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          {
+            echo "## MMORPG Lab Release ${{ needs.version.outputs.version }}"
+            echo
+            echo "### Docker images (GHCR)"
+            echo
+            echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/mmorpg-orchestrator:${{ needs.version.outputs.semver }}\`"
+            echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/mmorpg-gatekeeper:${{ needs.version.outputs.semver }}\`"
+            echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/mmorpg-dedicated-server:${{ needs.version.outputs.semver }}\`"
+            echo
+            echo "### .deb packages"
+            echo
+            echo "| Package | Use case |"
+            echo "|---|---|"
+            echo "| \`mmorpg-monolith\` | All-in-one VM, single \`apt install\` and you have the whole stack |"
+            echo "| \`mmorpg-central-fleet\` | Control plane VM (redis + orch + gk), dispatches to fleet-ds hosts |"
+            echo "| \`mmorpg-redis\` | Dedicated Redis VM |"
+            echo "| \`mmorpg-gatekeeper\` | Dedicated gatekeeper VM |"
+            echo "| \`mmorpg-orchestrator\` | Dedicated orchestrator VM |"
+            echo "| \`mmorpg-fleet-ds\` | DS host VM — runs host_agent natively, spawns DS containers on demand |"
+            echo
+            echo "All packages install configs at \`/etc/mmorpg/<name>/\` and \`/etc/default/mmorpg-<name>\`."
+            echo "Edit the defaults, then \`systemctl start mmorpg-<name>\`."
+            echo
+            if [ -n "$PREV_TAG" ]; then
+              echo "### Changes since $PREV_TAG"
+              echo
+              git log --pretty=format:"- %s (%h)" "${PREV_TAG}..HEAD" || true
+            fi
+          } > release-notes.md
+          cat release-notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version.outputs.version }}
+          name: ${{ needs.version.outputs.version }}
+          body_path: release-notes.md
+          files: dist/*.deb
+          fail_on_unmatched_files: true

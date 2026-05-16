@@ -1,0 +1,17 @@
+#!/bin/sh
+set -e
+systemctl daemon-reload
+docker pull __REGISTRY__/__NAMESPACE__/mmorpg-gatekeeper:__VERSION__ || true
+systemctl enable mmorpg-gatekeeper.service
+cat <<MSG
+
+mmorpg-gatekeeper installed.
+
+Edit /etc/default/mmorpg-gatekeeper and set REDIS_URL.
+
+Then: systemctl start mmorpg-gatekeeper
+
+Gatekeeper exposes TCP 3000.
+
+MSG
+exit 0

@@ -1,0 +1,20 @@
+#!/bin/sh
+set -e
+systemctl daemon-reload
+docker pull __REGISTRY__/__NAMESPACE__/mmorpg-orchestrator:__VERSION__ || true
+systemctl enable mmorpg-orchestrator.service
+cat <<MSG
+
+mmorpg-orchestrator installed.
+
+Required edits in /etc/default/mmorpg-orchestrator:
+  - REDIS_URL=redis://<redis-vm>:6379
+  - DS_HOSTS=<comma-separated IPs of fleet DS hosts>
+  - AGENT_TOKEN=<must match token on every fleet-ds host>
+  - ORCH_ADVERTISE_HOST=<this VM's LAN IP>
+
+Then:
+  systemctl start mmorpg-orchestrator
+
+MSG
+exit 0

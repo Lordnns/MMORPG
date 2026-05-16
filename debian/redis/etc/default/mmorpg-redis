@@ -1,0 +1,3 @@
+# /etc/default/mmorpg-redis
+# No environment overrides required for a vanilla redis-in-docker setup.
+# Add custom options here if you need authentication, persistence, etc.

@@ -1,0 +1,15 @@
+Package: mmorpg-orchestrator
+Version: __VERSION__
+Section: net
+Priority: optional
+Architecture: all
+Depends: docker.io | docker-ce, docker-compose-plugin | docker-compose
+Maintainer: Samuel <lordnns@example.com>
+Homepage: https://github.com/Lordnns/MMORPG
+Description: MMORPG lab — dedicated orchestrator VM
+ Runs the orchestrator on a dedicated VM in remote-docker mode. Dispatches
+ DS spawn/kill requests to fleet-ds hosts via their host_agent.
+ .
+ Configure /etc/default/mmorpg-orchestrator (REDIS_URL, DS_HOSTS,
+ AGENT_TOKEN, ORCH_ADVERTISE_HOST), then:
+   systemctl start mmorpg-orchestrator

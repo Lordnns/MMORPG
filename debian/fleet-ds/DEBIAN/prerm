@@ -1,0 +1,21 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = "remove" ] || [ "$1" = "upgrade" ]; then
+    if systemctl is-active --quiet mmorpg-host-agent.service; then
+        systemctl stop mmorpg-host-agent.service || true
+    fi
+fi
+
+if [ "$1" = "remove" ]; then
+    systemctl disable mmorpg-host-agent.service || true
+
+    # Clean up any DS containers this host spawned.
+    DS=$(docker ps -aq --filter "label=mmorpg.role=ds" 2>/dev/null || true)
+    if [ -n "$DS" ]; then
+        echo "Cleaning up DS containers..."
+        echo "$DS" | xargs -r docker rm -f || true
+    fi
+fi
+
+exit 0

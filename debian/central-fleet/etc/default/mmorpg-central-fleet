@@ -1,0 +1,45 @@
+# /etc/default/mmorpg-central-fleet
+#
+# Configuration for the central control plane in fleet mode.
+
+# ─── Required ───────────────────────────────────────────────────────────
+# Comma-separated IPs/hostnames of fleet DS hosts (running mmorpg-fleet-ds).
+DS_HOSTS=CHANGE-ME
+
+# Shared secret with each fleet DS host's host_agent.
+AGENT_TOKEN=CHANGE-ME
+
+# This VM's LAN IP, reachable by fleet DS hosts (so DSes can heartbeat back).
+ORCH_ADVERTISE_HOST=CHANGE-ME
+
+# ─── Orchestrator ───────────────────────────────────────────────────────
+ORCH_LISTEN_IP=0.0.0.0
+ORCH_PORT=9000
+# When network_mode is "host", REDIS_URL must use the host's external Redis
+# address (since the orchestrator container doesn't see the compose network).
+# We expose Redis on 6379 of this host so the orchestrator can reach it.
+REDIS_URL=redis://127.0.0.1:6379
+
+HOT_CAPACITY_MIN=20
+EVICT_BUFFER=9
+MAX_SPAWN_PER_TICK=3
+MAX_EVICT_PER_TICK=2
+SCALER_INTERVAL=5
+SERVER_TTL=15
+
+AGENT_PORT=8090
+DS_PORT_RANGE_MIN=7001
+DS_PORT_RANGE_MAX=7100
+DS_ZONE=zone_A
+DS_MAX_PLAYERS=10
+# Empty: fleet-ds host_agents fill in their own LAN IP for spawned DSes.
+DS_ADVERTISE_HOST=
+
+# ─── Gatekeeper ─────────────────────────────────────────────────────────
+SESSION_TTL=30
+LOGIN_WAIT_SECS=60
+LOGIN_POLL_MS=500
+LOGIN_PING_SECS=2
+
+# ─── Logging ────────────────────────────────────────────────────────────
+RUST_LOG=info,game_sockets=warn

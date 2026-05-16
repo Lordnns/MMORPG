@@ -1,0 +1,36 @@
+﻿# Cargo build artifacts (huge, regenerated inside container)
+**/target/
+**/Cargo.lock.bak
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Docs / non-build files
+*.md
+README.md
+
+# Docker meta (don't need them inside the build)
+docker-compose.yml
+docker/
+
+# Env files (we inject env via compose, not at build time)
+.env
+.env.example
+.env.exemple
+
+# Logs
+*.log
+
+# Test outputs
+benchmark_results/

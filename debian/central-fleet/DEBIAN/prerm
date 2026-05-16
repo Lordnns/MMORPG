@@ -1,0 +1,14 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = "remove" ] || [ "$1" = "upgrade" ]; then
+    if systemctl is-active --quiet mmorpg-central-fleet.service; then
+        systemctl stop mmorpg-central-fleet.service || true
+    fi
+fi
+
+if [ "$1" = "remove" ]; then
+    systemctl disable mmorpg-central-fleet.service || true
+fi
+
+exit 0

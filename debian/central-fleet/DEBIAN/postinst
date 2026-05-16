@@ -1,0 +1,31 @@
+#!/bin/sh
+set -e
+
+systemctl daemon-reload
+
+echo "Pulling control-plane images..."
+docker pull __REGISTRY__/__NAMESPACE__/mmorpg-orchestrator:__VERSION__ || true
+docker pull __REGISTRY__/__NAMESPACE__/mmorpg-gatekeeper:__VERSION__ || true
+
+systemctl enable mmorpg-central-fleet.service
+
+cat <<MSG
+
+mmorpg-central-fleet installed.
+
+This is the control plane. DS hosts must run mmorpg-fleet-ds.
+
+Required edits in /etc/default/mmorpg-central-fleet:
+  - DS_HOSTS=<comma-separated IPs of fleet DS hosts>
+  - AGENT_TOKEN=<must match token on every fleet-ds host>
+  - ORCH_ADVERTISE_HOST=<this VM's LAN IP, reachable by fleet-ds hosts>
+
+Then:
+  systemctl start mmorpg-central-fleet
+  journalctl -u mmorpg-central-fleet -f
+
+Gatekeeper exposes TCP 3000.
+
+MSG
+
+exit 0

@@ -1,0 +1,12 @@
+services:
+  gatekeeper:
+    image: __REGISTRY__/__NAMESPACE__/mmorpg-gatekeeper:__VERSION__
+    container_name: mmorpg-gatekeeper
+    env_file:
+      - /etc/default/mmorpg-gatekeeper
+    environment:
+      GK_LISTEN_IP: "0.0.0.0"
+      GK_PORT: "3000"
+    ports:
+      - "3000:3000"
+    restart: unless-stopped

@@ -1,0 +1,17 @@
+#!/bin/sh
+set -e
+systemctl daemon-reload
+docker pull redis:7-alpine || true
+systemctl enable mmorpg-redis.service
+cat <<MSG
+
+mmorpg-redis installed.
+
+  systemctl start mmorpg-redis
+  journalctl -u mmorpg-redis -f
+
+Redis listens on TCP 6379 of all interfaces. Make sure your firewall
+allows access only from the orchestrator and gatekeeper VMs.
+
+MSG
+exit 0

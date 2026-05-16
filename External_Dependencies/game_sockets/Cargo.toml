@@ -1,0 +1,43 @@
+[package]
+name = "game_sockets"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# Always needed (used by lib.rs core types)
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+thiserror = "2"
+uuid = { version = "1", features = ["v4"] }
+bytes = "1"
+
+# Optional, gated by feature
+tokio-util = { version = "0.7", features = ["codec"], optional = true }
+futures = { version = "0.3", optional = true }
+quinn = { version = "0.10", optional = true }
+rustls = { version = "0.21", features = ["dangerous_configuration"], optional = true }
+rcgen = { version = "0.11", optional = true }
+game-networking-sockets = { version = "0.1", optional = true }
+
+# Used only by the bench client/server binaries, not the library backends
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+crc32fast = "1.5.0"
+rand = "0.9.2"
+serde = { version = "1.0.228", features = ["derive"] }
+csv = "1.4.0"
+clap = { version = "4.5", features = ["derive"] }
+serde_json = "1.0.149"
+plotters = "0.3.7"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+
+[features]
+default = ["udp", "tcp", "quic", "gns"]
+udp = []
+tcp = ["dep:tokio-util", "dep:futures"]
+quic = ["dep:quinn", "dep:rustls", "dep:rcgen"]
+gns = ["dep:game-networking-sockets"]

@@ -1,0 +1,70 @@
+﻿services:
+  redis:
+    image: redis:7-alpine
+    container_name: mmorpg-redis
+    networks: [mmorpg]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 1s
+      retries: 5
+
+  orchestrator:
+    image: mmorpg/orchestrator:latest
+    build:
+      context: .
+      dockerfile: docker/orchestrator.Dockerfile
+    container_name: mmorpg-orchestrator
+    networks: [mmorpg]
+    depends_on:
+      redis: { condition: service_healthy }
+    environment:
+      ORCH_LISTEN_IP: "0.0.0.0"
+      ORCH_PORT: "9000"
+      ORCH_ADVERTISE_HOST: "orchestrator"
+      REDIS_URL: "redis://redis:6379"
+      HOT_CAPACITY_MIN: "20"
+      EVICT_BUFFER: "9"
+      MAX_SPAWN_PER_TICK: "3"
+      MAX_EVICT_PER_TICK: "2"
+      SCALER_INTERVAL: "5"
+      SERVER_TTL: "15"
+      SPAWNER: "local-docker"
+      DS_DOCKER_IMAGE: "mmorpg/dedicated_server:latest"
+      DS_DOCKER_NETWORK: "mmorpg"
+      DS_PORT_RANGE_MIN: "7001"
+      DS_PORT_RANGE_MAX: "7100"
+      DS_ZONE: "zone_A"
+      DS_MAX_PLAYERS: "10"
+      DS_ADVERTISE_HOST: "localhost"
+      RUST_LOG: "info,game_sockets=warn"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  gatekeeper:
+    image: mmorpg/gatekeeper:latest
+    build:
+      context: .
+      dockerfile: docker/gatekeeper.Dockerfile
+    container_name: mmorpg-gatekeeper
+    networks: [mmorpg]
+    depends_on:
+      redis: { condition: service_healthy }
+    environment:
+      GK_LISTEN_IP: "0.0.0.0"
+      GK_PORT: "3000"
+      REDIS_URL: "redis://redis:6379"
+      SESSION_TTL: "30"
+      LOGIN_WAIT_SECS: "60"
+      LOGIN_POLL_MS: "500"
+      LOGIN_PING_SECS: "2"
+      RUST_LOG: "info"
+    ports:
+      - "3000:3000"
+
+networks:
+  mmorpg:
+    name: mmorpg
+    driver: bridge

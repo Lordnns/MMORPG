@@ -1,0 +1,17 @@
+# /etc/default/mmorpg-host-agent
+#
+# Configuration for the host_agent.
+
+# ─── Required ───────────────────────────────────────────────────────────
+# Central Redis (where the agent heartbeats `host:<hostname>`).
+REDIS_URL=redis://CHANGE-ME:6379
+
+# Shared secret with the orchestrator. Must match orchestrator's AGENT_TOKEN.
+AGENT_TOKEN=CHANGE-ME
+
+# ─── Optional ───────────────────────────────────────────────────────────
+# HTTP port the agent listens on for orchestrator commands.
+AGENT_PORT=8090
+
+# Logging level.
+RUST_LOG=info

@@ -1,0 +1,13 @@
+# /etc/default/mmorpg-gatekeeper
+#
+# Required: address of the Redis VM.
+REDIS_URL=redis://CHANGE-ME:6379
+
+# Gatekeeper login behavior.
+SESSION_TTL=30
+LOGIN_WAIT_SECS=60
+LOGIN_POLL_MS=500
+LOGIN_PING_SECS=2
+
+# Logging.
+RUST_LOG=info

@@ -1,0 +1,31 @@
+#!/bin/sh
+set -e
+
+systemctl daemon-reload
+
+echo "Pulling mmorpg images from GHCR..."
+docker pull __REGISTRY__/__NAMESPACE__/mmorpg-orchestrator:__VERSION__ || true
+docker pull __REGISTRY__/__NAMESPACE__/mmorpg-gatekeeper:__VERSION__ || true
+docker pull __REGISTRY__/__NAMESPACE__/mmorpg-dedicated-server:__VERSION__ || true
+
+# Re-tag DS image to the simple name the orchestrator (in local-docker mode) expects.
+docker tag __REGISTRY__/__NAMESPACE__/mmorpg-dedicated-server:__VERSION__ \
+    mmorpg/dedicated_server:latest 2>/dev/null || true
+
+systemctl enable mmorpg-monolith.service
+
+cat <<MSG
+
+mmorpg-monolith installed.
+
+Next steps:
+  1. Review /etc/default/mmorpg-monolith.
+  2. systemctl start mmorpg-monolith
+  3. journalctl -u mmorpg-monolith -f
+  4. Test login: curl -X POST http://localhost:3000/login \\
+       -H "Content-Type: application/json" \\
+       -d '{"username":"alice","password":"1234"}'
+
+MSG
+
+exit 0

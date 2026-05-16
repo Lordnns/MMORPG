@@ -1,0 +1,37 @@
+#!/bin/sh
+set -e
+
+DS_IMAGE="__REGISTRY__/__NAMESPACE__/mmorpg-dedicated-server:__VERSION__"
+
+systemctl daemon-reload
+
+echo "Pulling DS image: $DS_IMAGE"
+if ! docker pull "$DS_IMAGE"; then
+    echo "WARNING: failed to pull DS image. Pull manually before starting:" >&2
+    echo "  docker pull $DS_IMAGE" >&2
+fi
+
+# Re-tag to the stable name the orchestrator uses in remote-docker mode.
+docker tag "$DS_IMAGE" mmorpg/dedicated_server:latest 2>/dev/null || true
+
+systemctl enable mmorpg-host-agent.service
+
+cat <<MSG
+
+mmorpg-fleet-ds installed.
+
+This host is now a DS spawn target.
+
+Edit /etc/default/mmorpg-host-agent and set:
+  - REDIS_URL=redis://<central-redis-vm>:6379
+  - AGENT_TOKEN=<must match orchestrator's AGENT_TOKEN>
+
+Then:
+  systemctl start mmorpg-host-agent
+  curl http://localhost:8090/health
+
+The orchestrator will discover this host once it heartbeats to Redis.
+
+MSG
+
+exit 0

@@ -1,0 +1,15 @@
+Package: mmorpg-monolith
+Version: __VERSION__
+Section: net
+Priority: optional
+Architecture: all
+Depends: docker.io | docker-ce, docker-compose-plugin | docker-compose
+Maintainer: Samuel <lordnns@example.com>
+Homepage: https://github.com/Lordnns/MMORPG
+Description: MMORPG lab — all-in-one deployment
+ Single-host deployment of the MMORPG architecture lab: redis,
+ orchestrator, gatekeeper, and locally-spawned DS containers all
+ managed by docker compose on one VM.
+ .
+ Configure /etc/default/mmorpg-monolith, then:
+   systemctl start mmorpg-monolith
