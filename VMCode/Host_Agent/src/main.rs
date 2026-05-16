@@ -491,6 +491,29 @@ async fn run_heartbeat(state: Arc<AppState>) {
     }
 }
 
+async fn list(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Response {
+    if !check_auth(&headers, &state.config.agent_token) {
+        return unauthorized();
+    }
+
+    let local = state.local.lock().await;
+    let mut dses = Vec::new();
+
+    // Report the container if it's currently running or starting
+    if let (Some(ds_id), Some(container_id)) = (&local.ds_id, &local.container_id) {
+        dses.push(shared::AgentDsInfo {
+            ds_id: ds_id.clone(),
+            port: 7001, // Note: You might want to track the actual port in LocalState later
+            container_id: container_id.clone(),
+        });
+    }
+
+    Json(dses).into_response()
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Main
 // ─────────────────────────────────────────────────────────────────────────
@@ -538,6 +561,7 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/status", get(status))
+        .route("/list", get(list))
         .route("/spawn", post(spawn))
         .route("/kill", post(kill))
         .with_state(state.clone());
