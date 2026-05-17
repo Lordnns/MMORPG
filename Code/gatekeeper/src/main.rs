@@ -122,9 +122,15 @@ async fn login(
         match allocate(&mut conn, &req.username, state.config.session_ttl_secs).await {
             Ok(Some(pair)) => pair,
             Ok(None) => {
+                let exhausted = is_fleet_exhausted(&mut conn).await.unwrap_or(false);
+                let msg = if exhausted {
+                    "Servers are full, please try again later"
+                } else {
+                    "No server available, fleet is scaling up — please retry"
+                };
                 return (
                     StatusCode::SERVICE_UNAVAILABLE,
-                    Json(ErrorResponse { error: "No server available".into() }),
+                    Json(ErrorResponse { error: msg.into() }),
                 ).into_response();
             }
             Err(e) => {
@@ -188,9 +194,14 @@ async fn login_stream(
         let mut last_ping = started;
 
         loop {
-           let attempt = {
+            let (attempt, exhausted) = {
                 let mut conn = state.redis.lock().await;
-                allocate(&mut conn, &q.username, state.config.session_ttl_secs).await
+                let allocated = allocate(&mut conn, &q.username, state.config.session_ttl_secs).await;
+                let exhausted = match &allocated {
+                    Ok(None) => is_fleet_exhausted(&mut conn).await.unwrap_or(false),
+                    _ => false,
+                };
+                (allocated, exhausted)
             };
 
             match attempt {
@@ -214,7 +225,7 @@ async fn login_stream(
                     return;
                 }
                 Ok(None) => {
-                    // fall through to waiting logic
+                    // fall through to waiting / exhaustion logic
                 }
                 Err(e) => {
                     warn!(error = %e, "allocate failed in stream");
@@ -225,13 +236,23 @@ async fn login_stream(
                 }
             }
 
+            // Hard "full full" — no idle host and no DS with free slots. No
+            // amount of waiting will help, so cut immediately.
+            if exhausted {
+                yield to_event(&LoginEvent::Error {
+                    error: "Servers are full, please try again later".into(),
+                });
+                return;
+            }
+
             let now = tokio::time::Instant::now();
+
+            // Soft "scaling up" — there's capacity coming (idle host, or a DS
+            // with a slot about to free up). Wait until the deadline before
+            // giving up with a different message.
             if now >= deadline {
                 yield to_event(&LoginEvent::Error {
-                    error: format!(
-                        "No server available after {}s wait",
-                        state.config.login_wait_secs
-                    ),
+                    error: "Servers are taking too long to scale up, please try again later".into(),
                 });
                 return;
             }
@@ -305,6 +326,46 @@ async fn find_available_server(conn: &mut ConnectionManager) -> Result<Option<Ch
 
     candidates.sort_by(|a, b| b.0.cmp(&a.0));
     Ok(candidates.into_iter().next().map(|(_, s)| s))
+}
+
+/// True iff the fleet has no free slots AND no idle host to scale into.
+/// Returns false on an empty fleet (treat that as "still spinning up" rather
+/// than a hard rejection — the orchestrator may be bootstrapping).
+async fn is_fleet_exhausted(conn: &mut ConnectionManager) -> Result<bool> {
+    let mut host_iter = conn.scan_match::<_, String>("host:*").await?;
+    let mut host_keys = Vec::new();
+    while let Some(k) = host_iter.next_item().await { host_keys.push(k); }
+    drop(host_iter);
+
+    if host_keys.is_empty() {
+        return Ok(false);
+    }
+
+    for k in &host_keys {
+        let status: Option<String> = conn.hget(k, "status").await.ok();
+        if status.as_deref() == Some("idle") {
+            return Ok(false);
+        }
+    }
+
+    let mut srv_iter = conn.scan_match::<_, String>("server:*").await?;
+    let mut srv_keys = Vec::new();
+    while let Some(k) = srv_iter.next_item().await { srv_keys.push(k); }
+    drop(srv_iter);
+
+    for k in srv_keys {
+        let fields: HashMap<String, String> = conn.hgetall(&k).await?;
+        if fields.get("status").map(String::as_str) != Some("available") {
+            continue;
+        }
+        let cur: usize = fields.get("player_count").and_then(|s| s.parse().ok()).unwrap_or(0);
+        let max: usize = fields.get("max_players").and_then(|s| s.parse().ok()).unwrap_or(0);
+        if max > 0 && cur < max {
+            return Ok(false);
+        }
+    }
+
+    Ok(true)
 }
 
 async fn list_available_servers(conn: &mut ConnectionManager) -> Result<Vec<ChosenServer>> {
