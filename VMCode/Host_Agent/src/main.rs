@@ -375,13 +375,16 @@ async fn docker_run(config: &Config, req: &SpawnRequest) -> Result<String> {
 }
 
 async fn docker_stop(container_id: &str) -> Result<()> {
+    // `rm -f` issues SIGKILL immediately. We used to call `docker stop`, but
+    // its 10s SIGTERM grace period raced the orchestrator's 10s HTTP timeout
+    // and the kill RPC always errored out even though the container did die.
     let output = tokio::process::Command::new("docker")
-        .args(["stop", container_id])
+        .args(["rm", "-f", container_id])
         .output().await?;
 
     if !output.status.success() {
         anyhow::bail!(
-            "docker stop failed: {}",
+            "docker rm -f failed: {}",
             String::from_utf8_lossy(&output.stderr).trim()
         );
     }
