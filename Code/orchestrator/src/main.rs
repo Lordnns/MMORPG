@@ -806,13 +806,29 @@ async fn run_scaler(
             read_hosts(&mut conn).await.unwrap_or_default()
         };
 
+        let server_by_id: HashMap<&str, &ServerSnapshot> = servers.iter()
+            .map(|s| (s.id.as_str(), s))
+            .collect();
+
         let mut report = format!(
             "\nfleet capacity: free={} target={} buffer={}\n  hosts ({}):\n",
             free, config.hot_capacity_min, config.evict_buffer, hosts.len(),
         );
         for h in &hosts {
-            let ds = h.ds_id.as_deref().unwrap_or("-");
-            report.push_str(&format!("    {:<18} {:<10} ds={}\n", h.name, h.status, ds));
+            let ds_info = match h.ds_id.as_deref() {
+                Some(id) => match server_by_id.get(id) {
+                    Some(s) => format!(
+                        "ds={} status={} {}/{}",
+                        &id[..8], s.status, s.player_count, s.max_players
+                    ),
+                    None => format!("ds={} NO-HEARTBEAT", &id[..8]),
+                },
+                None => "ds=-".to_string(),
+            };
+            report.push_str(&format!(
+                "    {:<18} host={:<10} {}\n",
+                h.name, h.status, ds_info
+            ));
         }
         info!("{}", report.trim_end());
 
