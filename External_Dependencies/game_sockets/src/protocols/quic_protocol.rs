@@ -69,6 +69,12 @@ fn make_server_config() -> (quinn::ServerConfig, Vec<u8>) {
     // Keep Alive (Prevent timeouts during loading screens)
     transport_config.keep_alive_interval(Some(Duration::from_secs(1)));
 
+    // Disable MTU probing — its larger probe packets get rejected with EMSGSIZE
+    // on some Linux kernels (notably under `docker --network host`), producing
+    // noisy `quinn_udp: sendmsg error: Message too long` warns. Game traffic
+    // fits comfortably in the 1200-byte default, so probing higher buys nothing.
+    transport_config.mtu_discovery_config(None);
+
     server_config.transport_config(Arc::new(transport_config));
 
     (server_config, cert_der)
@@ -90,6 +96,7 @@ fn make_client_config() -> quinn::ClientConfig {
     transport_config.datagram_send_buffer_size(0);
     transport_config.initial_rtt(Duration::from_millis(15));
     transport_config.keep_alive_interval(Some(Duration::from_secs(1)));
+    transport_config.mtu_discovery_config(None);
 
     client_config.transport_config(Arc::new(transport_config));
 
